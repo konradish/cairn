@@ -1,0 +1,781 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>cairn · triage feed</title>
+  <style>
+    :root {
+      --bg: #0e1116;
+      --bg-elev: #161b22;
+      --bg-elev-2: #1f2630;
+      --ink: #e6edf3;
+      --ink-dim: #8b949e;
+      --ink-faint: #6b737d;
+      --border: #30363d;
+      --accent: #e3b341;        /* cairn stone */
+      --red: #f85149;
+      --amber: #d29922;
+      --green: #3fb950;
+      --blue: #58a6ff;
+      --partial: #bc8cff;
+      --mono: "SFMono-Regular", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace;
+      --body: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif;
+      --radius: 10px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--body);
+      font-size: 15px;
+      line-height: 1.5;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right)
+               env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, pre, .mono { font-family: var(--mono); }
+    pre {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      overflow-x: auto;
+      font-size: 12.5px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 8px 0 0 0;
+      color: var(--ink-dim);
+    }
+
+    .wrap { max-width: 920px; margin: 0 auto; padding: 16px 14px 64px; }
+
+    header.top {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+    }
+    header.top h1 {
+      font-family: var(--mono);
+      font-size: 22px; margin: 0;
+      color: var(--accent); letter-spacing: 0.5px;
+    }
+    header.top h1 .stone { margin-right: 6px; }
+    header.top .meta {
+      color: var(--ink-faint); font-family: var(--mono); font-size: 12px;
+    }
+
+    /* Health strip */
+    .health {
+      background: linear-gradient(180deg, var(--bg-elev), var(--bg-elev-2));
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      margin-bottom: 18px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px 18px;
+      font-size: 13px;
+    }
+    .health .cell .k {
+      color: var(--ink-faint); font-family: var(--mono); font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.6px; display: block;
+      margin-bottom: 2px;
+    }
+    .health .cell .v {
+      color: var(--ink); font-family: var(--mono); font-size: 14px;
+    }
+    .health .cell .v .chip { margin-right: 6px; }
+    .chip {
+      display: inline-block; padding: 1px 6px; border-radius: 999px;
+      font-size: 11.5px; font-family: var(--mono); border: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .chip.red    { color: var(--red);    border-color: #5c1a1a; background: #2a1414; }
+    .chip.amber  { color: var(--amber);  border-color: #5c4413; background: #2a220e; }
+    .chip.green  { color: var(--green);  border-color: #1a4c22; background: #112016; }
+    .chip.blue   { color: var(--blue);   border-color: #1a3a5c; background: #10192a; }
+
+    .dots { display: inline-flex; gap: 4px; margin-left: 4px; vertical-align: middle; }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      display: inline-block; background: var(--ink-faint);
+    }
+    .dot.pass    { background: var(--green); }
+    .dot.fail    { background: var(--red); }
+    .dot.partial { background: var(--partial); }
+
+    /* Section headers */
+    section.section { margin-bottom: 26px; }
+    .section > h2 {
+      font-family: var(--mono);
+      font-size: 13px;
+      margin: 0 0 10px 0;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--ink-dim);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section > h2 .count {
+      color: var(--ink-faint); font-weight: normal;
+    }
+    .section.needs-you > h2 { color: var(--red); }
+    .section.needs-you .count { color: var(--red); }
+
+    /* Cards */
+    .card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      position: relative;
+    }
+    .card.sev-red   { border-left: 3px solid var(--red); }
+    .card.sev-amber { border-left: 3px solid var(--amber); }
+    .card.sev-green { border-left: 3px solid var(--green); }
+    .card.sev-blue  { border-left: 3px solid var(--blue); }
+
+    .card .head {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 10px; flex-wrap: wrap;
+    }
+    .card .title {
+      font-family: var(--mono); font-size: 14px; color: var(--ink);
+      word-break: break-all;
+    }
+    .card .sub {
+      color: var(--ink-faint); font-family: var(--mono); font-size: 11.5px;
+    }
+    .card .age {
+      color: var(--ink-faint); font-family: var(--mono); font-size: 11.5px;
+      white-space: nowrap;
+    }
+    .card .body {
+      margin-top: 6px; font-size: 14px; color: var(--ink-dim);
+    }
+    .card .body p { margin: 0; }
+    .card .foot {
+      margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px 14px;
+      font-family: var(--mono); font-size: 12px; color: var(--ink-faint);
+    }
+    .card .foot a { font-family: var(--mono); }
+
+    .empty {
+      background: var(--bg-elev);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      color: var(--ink-dim);
+      font-family: var(--mono); font-size: 13px;
+      text-align: center;
+    }
+    .empty.positive {
+      color: var(--green); border-color: #1a4c22;
+    }
+
+    /* Watching groups */
+    .watching-group {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .watching-group .gh {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between;
+      font-family: var(--mono); font-size: 12.5px;
+      background: var(--bg-elev-2);
+    }
+    .watching-group .gh .beat { color: var(--accent); }
+    .watching-group .entry {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: 90px 1fr auto;
+      gap: 10px;
+      font-size: 13px;
+      align-items: baseline;
+    }
+    .watching-group .entry:last-child { border-bottom: none; }
+    .watching-group .entry .when { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
+    .watching-group .entry .art  { color: var(--ink-dim); word-break: break-word; }
+    .watching-group .entry .st   { font-family: var(--mono); font-size: 11px; }
+    .st.completed { color: var(--green); }
+    .st.no_op     { color: var(--ink-faint); }
+    .st.errored   { color: var(--red); }
+
+    footer {
+      color: var(--ink-faint); font-family: var(--mono); font-size: 11.5px;
+      text-align: center; margin-top: 40px;
+      border-top: 1px solid var(--border); padding-top: 14px;
+    }
+
+    /* Copy-on-click rollback command */
+    .rb {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: var(--mono); font-size: 12px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 4px; padding: 2px 6px;
+      color: var(--ink-dim);
+      cursor: pointer;
+      max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .rb:hover { background: var(--bg-elev-2); color: var(--ink); }
+    .rb::before { content: "⎌"; color: var(--accent); }
+
+    @media (max-width: 640px) {
+      .health { grid-template-columns: 1fr 1fr; }
+      .card .head { flex-direction: column; align-items: flex-start; }
+      .watching-group .entry { grid-template-columns: 70px 1fr; }
+      .watching-group .entry .st { grid-column: 1 / 3; padding-top: 2px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <header class="top">
+      <h1><span class="stone">▲</span>cairn</h1>
+      <div class="meta">2026-04-16 23:30 UTC · rerun `make build` to refresh</div>
+    </header>
+
+    <!-- HEALTH STRIP -->
+    <section class="health" aria-label="Health strip">
+      <div class="cell">
+        <span class="k">queue</span>
+        <span class="v">
+          <span class="chip blue">0 pending</span>
+          <span class="chip blue">0 running</span>
+          <span class="chip red">1 blocked</span>
+          
+        </span>
+      </div>
+
+      <div class="cell">
+        <span class="k">last tick</span>
+        <span class="v">12s ago · #92</span>
+      </div>
+
+      
+      <div class="cell">
+        <span class="k">calibration</span>
+        <span class="v">
+          
+          <span title="anchor-electric — last: true_negative">
+            <span class="dots"><span class="dot pass" title="true_negative"></span><span class="dot pass" title="true_negative"></span><span class="dot pass" title="true_negative"></span></span>
+          </span>
+          
+          <span title="anchor-lawpass — last: true_negative">
+            <span class="dots"><span class="dot pass" title="true_negative"></span><span class="dot pass" title="true_negative"></span><span class="dot pass" title="true_negative"></span></span>
+          </span>
+          
+          <span title="anchor-movies — last: true_negative">
+            <span class="dots"><span class="dot pass" title="true_negative"></span><span class="dot pass" title="true_negative"></span><span class="dot pass" title="true_negative"></span></span>
+          </span>
+          
+          <span title="anchor-smt — last: true_negative">
+            <span class="dots"><span class="dot pass" title="true_negative"></span><span class="dot pass" title="true_negative"></span><span class="dot pass" title="true_negative"></span></span>
+          </span>
+          
+          <span title="d1-api — last: true_positive">
+            <span class="dots"><span class="dot pass" title="true_positive"></span><span class="dot partial" title="partial"></span><span class="dot pass" title="true_positive"></span></span>
+          </span>
+          
+          <span title="diff-path — last: true_positive">
+            <span class="dots"><span class="dot pass" title="true_positive"></span><span class="dot partial" title="invalid"></span><span class="dot pass" title="true_positive"></span></span>
+          </span>
+          
+          <span title="dockerfile-missing — last: true_positive">
+            <span class="dots"><span class="dot pass" title="true_positive"></span><span class="dot pass" title="true_positive"></span></span>
+          </span>
+          
+          <span title="large-file — last: true_positive">
+            <span class="dots"><span class="dot pass" title="true_positive"></span><span class="dot partial" title="partial"></span><span class="dot pass" title="true_positive"></span></span>
+          </span>
+          
+          <span title="movies-hide — last: partial">
+            <span class="dots"><span class="dot partial" title="partial"></span><span class="dot fail" title="false_negative"></span><span class="dot partial" title="partial"></span></span>
+          </span>
+          
+          <span title="recharts-axis — last: true_positive">
+            <span class="dots"><span class="dot pass" title="true_positive"></span></span>
+          </span>
+          
+          <span title="smt-coverage — last: true_positive">
+            <span class="dots"><span class="dot pass" title="true_positive"></span></span>
+          </span>
+          
+          <span title="smt-graph — last: false_negative_by_inspection">
+            <span class="dots"><span class="dot partial" title="false_negative_by_inspection"></span></span>
+          </span>
+          
+          <span title="smt-status — last: true_positive">
+            <span class="dots"><span class="dot pass" title="true_positive"></span><span class="dot pass" title="true_positive"></span><span class="dot partial" title="partial"></span></span>
+          </span>
+          
+        </span>
+      </div>
+      
+
+      
+      <div class="cell">
+        <span class="k">deploys</span>
+        <span class="v">
+          
+          <span class="chip">electric-app <span style="color:var(--ink-faint)">·</span> 6f53ae5 · prod-2026-04-14-28196d0</span>
+          
+          <span class="chip">family-movie-queue <span style="color:var(--ink-faint)">·</span> d794789 · overnight-pre-20260215-2242</span>
+          
+          <span class="chip">lawpass-ai <span style="color:var(--ink-faint)">·</span> 6c702d4 · overnight-pre-20260217-1310</span>
+          
+          <span class="chip">obsidian-vault <span style="color:var(--ink-faint)">·</span> c1a8b0f · htk/wsl-powershell-bridge/20251227-v1/PASS</span>
+          
+        </span>
+      </div>
+      
+    </section>
+
+
+    <!-- NEEDS YOU -->
+    <section class="section needs-you" aria-label="Needs you">
+      <h2>▲ needs you <span class="count">(1)</span></h2>
+      
+      <article class="card sev-amber">
+        <div class="head">
+          <div>
+            <div class="title">efinder-efl-ingest-reextract-deploy</div>
+            <div class="sub">blocked · electric-app</div>
+          </div>
+          <div class="age">1d ago</div>
+        </div>
+        <div class="body"><p>This is follow-up #2 from the TOU audit chain. Monetary + deployment gates — orchestrator must Discord-GATE before dispatching.</p></div>
+      </article>
+      
+      
+    </section>
+
+
+    <!-- SHIPPED -->
+    <section class="section" aria-label="What shipped">
+      <h2>▲ what shipped <span class="count">(last 24h · 10)</span></h2>
+      
+      <article class="card sev-green">
+        <div class="head">
+          <div>
+            <div class="title">dep-audit-lawpass-frontend-2026-04-16</div>
+            <div class="sub">lawpass-ai · 1 iter</div>
+          </div>
+          <div class="age">15m ago</div>
+        </div>
+        <div class="body"><p>All 9 HIGH + 2 moderate advisories closed. Next.js 16.1.6→16.2.4 (non-SemVer-major). `npm audit fix` closed 8 of 9 HIGH transitively; Next upgrade closed the remaining 6. Build (Turbopack, 19/19 static pages) + 363/363 vitest tests pass. 0 vulns total post-fix.</p></div>
+        <div class="foot">
+          <a href="https://github.com/konradish/lawpass-ai/commit/c6b0504dc20d47bc2c5cc86d7863ac52ea974dd7" target="_blank" rel="noopener">c6b0504</a>
+          
+          <span style="color:var(--ink-faint);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">chore(frontend): resolve 9 high-severity npm advisories</span>
+          <span class="rb" onclick="navigator.clipboard && navigator.clipboard.writeText(this.dataset.cmd)" data-cmd="git revert c6b0504" title="click to copy">git revert c6b0504</span>
+          <span class="mono">verifier:ef9e051</span>
+        </div>
+      </article>
+      
+      <article class="card sev-green">
+        <div class="head">
+          <div>
+            <div class="title">veritas-decision</div>
+            <div class="sub">notes</div>
+          </div>
+          <div class="age">20m ago</div>
+        </div>
+        <div class="body"><p>RETIRE Veritas. Kanban metaphor wrong for orchestrator observability — user wants triage feed, not status board. New UI (tentative name: flywheel-ui) to be built from scratch in own git repo, replacing Veritas as the window into orchestrator outputs/progress. Decision direct from user via Discord 2026-04-16.</p></div>
+        <div class="foot">
+          
+          
+          
+          
+          
+        </div>
+      </article>
+      
+      <article class="card sev-green">
+        <div class="head">
+          <div>
+            <div class="title">cairn-scaffold</div>
+            <div class="sub">electric-app · 1 iter</div>
+          </div>
+          <div class="age">45m ago</div>
+        </div>
+        <div class="body"><p>3 HIGH advisories resolved (flatted, picomatch, rollup) via non-breaking `npm audit fix`. Lockfile-only change. Build + 27/27 vitest tests pass. 2 moderates remain (esbuild/vite) — deferred as they require --force + direct vite major bump.</p></div>
+        <div class="foot">
+          <a href="https://github.com/konradish/electric-app/commit/daf4704afd461d3c4f598369d16b4d70e4b4817a" target="_blank" rel="noopener">daf4704</a>
+          
+          <span style="color:var(--ink-faint);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">fix(frontend): resolve 3 HIGH npm audit advisories</span>
+          <span class="rb" onclick="navigator.clipboard && navigator.clipboard.writeText(this.dataset.cmd)" data-cmd="git revert daf4704" title="click to copy">git revert daf4704</span>
+          <span class="mono">verifier:bec21e1e653a553e5f5f3e67d3f9315c52cee7c2</span>
+        </div>
+      </article>
+      
+      <article class="card sev-green">
+        <div class="head">
+          <div>
+            <div class="title">efinder-seasonal-rate-heuristic</div>
+            <div class="sub">electric-app · 1 iter</div>
+          </div>
+          <div class="age">4h ago</div>
+        </div>
+        <div class="body"><p>(no outcome recorded)</p></div>
+        <div class="foot">
+          <a href="https://github.com/konradish/electric-app/commit/a12b24c757a5b19720facf3bf630db549ac33a55" target="_blank" rel="noopener">a12b24c</a>
+          
+          <span style="color:var(--ink-faint);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">feat: add seasonal rate premium heuristic for weekly re-rank alert</span>
+          
+          
+        </div>
+      </article>
+      
+      <article class="card sev-green">
+        <div class="head">
+          <div>
+            <div class="title">efinder-smt-auth-offramp</div>
+            <div class="sub">electric-app · 1 iter</div>
+          </div>
+          <div class="age">5h ago</div>
+        </div>
+        <div class="body"><p>(no outcome recorded)</p></div>
+        <div class="foot">
+          <a href="https://github.com/konradish/electric-app/commit/887ab28099e1bd1c9347c1a44c1b5db46ec4b7e1" target="_blank" rel="noopener">887ab28</a>
+          
+          <span style="color:var(--ink-faint);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">feat: SMT authorization expiry tracking and self-serve disconnect</span>
+          
+          
+        </div>
+      </article>
+      
+      <article class="card sev-green">
+        <div class="head">
+          <div>
+            <div class="title">efinder-stripe-integration-spike</div>
+            <div class="sub">electric-app · 1 iter</div>
+          </div>
+          <div class="age">5h ago</div>
+        </div>
+        <div class="body"><p>(no outcome recorded)</p></div>
+        <div class="foot">
+          <a href="https://github.com/konradish/electric-app/commit/c5aba02ec4e33533e12ca1976f88f65c18eb6a1a" target="_blank" rel="noopener">c5aba02</a>
+          
+          <span style="color:var(--ink-faint);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">add Stripe subscription plumbing (no premium UI)</span>
+          
+          
+        </div>
+      </article>
+      
+      <article class="card sev-green">
+        <div class="head">
+          <div>
+            <div class="title">efinder-alert-email-integration</div>
+            <div class="sub">electric-app · 2 iter</div>
+          </div>
+          <div class="age">5h ago</div>
+        </div>
+        <div class="body"><p>(no outcome recorded)</p></div>
+        <div class="foot">
+          <a href="https://github.com/konradish/electric-app/commit/0a8562fefde0dfc8eda39254e353e274fc9b54a3" target="_blank" rel="noopener">0a8562f</a>
+          
+          <span style="color:var(--ink-faint);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">fix: alert dispatch — add email_id to alert_log, defensive paused_until parse, expired-pause test</span>
+          
+          
+        </div>
+      </article>
+      
+      <article class="card sev-green">
+        <div class="head">
+          <div>
+            <div class="title">efinder-tdu-auto-select-label</div>
+            <div class="sub">electric-app</div>
+          </div>
+          <div class="age">21h ago</div>
+        </div>
+        <div class="body"><p>(no outcome recorded)</p></div>
+        <div class="foot">
+          
+          
+          
+          
+          
+        </div>
+      </article>
+      
+      <article class="card sev-green">
+        <div class="head">
+          <div>
+            <div class="title">efinder-ux-consolidation-audit</div>
+            <div class="sub">electric-app</div>
+          </div>
+          <div class="age">21h ago</div>
+        </div>
+        <div class="body"><p>(no outcome recorded)</p></div>
+        <div class="foot">
+          
+          
+          
+          
+          
+        </div>
+      </article>
+      
+      <article class="card sev-green">
+        <div class="head">
+          <div>
+            <div class="title">efinder-smt-dual-display-fix</div>
+            <div class="sub">electric-app</div>
+          </div>
+          <div class="age">21h ago</div>
+        </div>
+        <div class="body"><p>(no outcome recorded)</p></div>
+        <div class="foot">
+          
+          
+          
+          
+          
+        </div>
+      </article>
+      
+      
+    </section>
+
+
+    <!-- RUNNING -->
+    <section class="section" aria-label="What's running">
+      <h2>▲ what's running <span class="count">(0)</span></h2>
+      
+      
+      <div class="empty">no items in progress.</div>
+      
+    </section>
+
+
+    <!-- WATCHING -->
+    <section class="section" aria-label="What I'm watching">
+      <h2>▲ what i'm watching <span class="count">(last 7d · 25)</span></h2>
+      
+      <div class="watching-group">
+        <div class="gh">
+          <span class="beat">bridge-mining</span>
+          <span style="color:var(--ink-faint)">2</span>
+        </div>
+        
+        <div class="entry">
+          <div class="when">38m ago</div>
+          <div class="art">No-op. Target: Resources/High-Alpha Moves and Habits. hsearch --bridge returned same-domain hits (topic:0.00 across all candidates — L+S agreement but no cross-domain signal). Top candidates (Making Expertise Visible at Moxe, Software Instagram Moment, Monetization-Memo) are all career/business domain — note already links to similar. No cross-domain bridge warranted this tick.</div>
+          <div class="st no_op">no_op</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">5h ago</div>
+          <div class="art">Bidirectional bridge added: Areas/Mind and Presence.md ↔ Resources/Operating Principles/Prepare Before Perform.md. Same move at different layers (internal state vs. external workspace). hsearch L+S score 0.9457.</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+      </div>
+      
+      <div class="watching-group">
+        <div class="gh">
+          <span class="beat">dep-audit</span>
+          <span style="color:var(--ink-faint)">2</span>
+        </div>
+        
+        <div class="entry">
+          <div class="when">1h ago</div>
+          <div class="art">Re-audit 10 ticks after tick-81 fixes landed. electric-app/frontend: 0 HIGH, 2 moderate (esbuild/vite — deferred, require --force). lawpass-ai/frontend: 0 vulns. Post-fix state confirmed healthy. No new advisories surfaced.</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">6h ago</div>
+          <div class="art">3 frontends + 3 backends audited. electric-app frontend 3 HIGH, lawpass-ai frontend 9 HIGH. 2 work items auto-queued: dep-audit-electric-app-frontend-2026-04-16, dep-audit-lawpass-frontend-2026-04-16. Python backends clean.</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+      </div>
+      
+      <div class="watching-group">
+        <div class="gh">
+          <span class="beat">tech-radar</span>
+          <span style="color:var(--ink-faint)">1</span>
+        </div>
+        
+        <div class="entry">
+          <div class="when">2h ago</div>
+          <div class="art">Resources/LLM/Tech-Radar-Qwen3.6-35B-A3B-2026-04-16.md — Alibaba Qwen3.6-35B-A3B (MoE, 3B active) released 2026-04-16, agentic coding positioning. Simon Willison verdict: drew better pelican than Opus 4.7. Intersects Gemma 4 26B local stack + agentic specialist positioning. Status SHELVE until Gemma hits ceiling or pricing shift. POC plan sketched.</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+      </div>
+      
+      <div class="watching-group">
+        <div class="gh">
+          <span class="beat">park-doc-mining</span>
+          <span style="color:var(--ink-faint)">1</span>
+        </div>
+        
+        <div class="entry">
+          <div class="when">2h ago</div>
+          <div class="art">Scanned 3 recent park docs (2026-04-14/15/16). Clusters found: (1) cwd drift in bash, (2) Edit-before-Read, (3) skill template adherence. All already encoded in ~/.claude/CLAUDE.md or the Edit tool&#x27;s own contract. No skill gap; no proposal created.</div>
+          <div class="st no_op">no_op</div>
+        </div>
+        
+      </div>
+      
+      <div class="watching-group">
+        <div class="gh">
+          <span class="beat">vault-hygiene</span>
+          <span style="color:var(--ink-faint)">1</span>
+        </div>
+        
+        <div class="entry">
+          <div class="when">3h ago</div>
+          <div class="art">Inbox/vault-lint-2026-04-16.md — surfaced top 10 stale captures (Execution Scaffolding 64, Parent_Communication_Strategy 59 (next user target), Agentic AI Tipping Point 31 (possible re-bloat)). 891 orphans, 1494 phantom links, 53 stale captures, 167 under-connected hubs. Judgment-required findings surfaced; no mechanical fixes applied.</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+      </div>
+      
+      <div class="watching-group">
+        <div class="gh">
+          <span class="beat">lesson-surface</span>
+          <span style="color:var(--ink-faint)">2</span>
+        </div>
+        
+        <div class="entry">
+          <div class="when">3h ago</div>
+          <div class="art">No overdue lessons across 368 indexed. Spaced-repetition cadence healthy. No action required.</div>
+          <div class="st no_op">no_op</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">1d ago</div>
+          <div class="art">no-op — lesson-index.yaml has 355 lessons, 0 overdue as of 2026-04-15. All next_surface dates are future-scheduled. Spaced-repetition healthy.</div>
+          <div class="st no_op">no_op</div>
+        </div>
+        
+      </div>
+      
+      <div class="watching-group">
+        <div class="gh">
+          <span class="beat">idle</span>
+          <span style="color:var(--ink-faint)">16</span>
+        </div>
+        
+        <div class="entry">
+          <div class="when">1d ago</div>
+          <div class="art">(no artifact)</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">1d ago</div>
+          <div class="art">lesson-surface (upgraded beat, tick 45): pulled lesson-2025-12-22-002 (107d overdue, architecture, 0 prior applications): &#x27;Prefer predictable structure over graceful degradation in automated pipelines - error placeholders better than omissions&#x27;. Verified already encoded — the CLAUDE.md line 47 edit from tick 43 (for sibling lesson-001) also covers -002&#x27;s principle (write_each_even_when_empty + use _none_/N/A + do_not_omit_heading). Marked no-op, times_applied 0→1, next surface 2026-04-29. Backlog progress: 2/107.</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">1d ago</div>
+          <div class="art">(no artifact)</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">1d ago</div>
+          <div class="art">lesson-surface (upgraded beat, first exercise): pulled top-overdue high-impact lesson (lesson-2025-12-22-001, 107d overdue, architecture, 0 prior applications): &#x27;For headless LLM automation, add MANDATORY sections block listing all required outputs — LLMs will skip sparse sections otherwise&#x27;. Partial prior encoding in ~/.claude/CLAUDE.md line 47 (4 sections listed but no mandatory directive or justification). Minimal edit: strengthened to &#x27;Workers MUST end with ALL four sections&#x27; + explicit &#x27;write each even when empty&#x27; + anchored lesson ID. Lesson index updated: times_applied 0→1, next surface 2026-04-29.</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">1d ago</div>
+          <div class="art">(no artifact)</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">1d ago</div>
+          <div class="art">bench-refresh: verified Gemma 4 hybrid-KV llama-swap + litellm config paths unchanged since 2026-04-12; appended verified:2026-04-14 note. Also landed mid-tick user directive (Discord 2026-04-15T01:12): empty-queue ticks should surface+act on overdue high-impact lessons without gating — encoded as feedback_heartbeat_lesson_review memory + upgraded lesson-surface beat definition in orchestrator SKILL.md.</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">2d ago</div>
+          <div class="art">(no artifact)</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">2d ago</div>
+          <div class="art">Ran lint.py (shipped tick 28 at commit 54c7e05) against live vault — first real production use, validates pilot. Runtime confirmed ~43s. Top stale-captures: Execution Scaffolding (60), Parent_Communication_Strategy (59 — matches Current-Context&#x27;s named next distill target), System Design Interview Playbook (47), First Step Activation (32), Agentic AI Tipping Point (31 — though last session note said this was 30→10, suggests it may have re-grown or script counted differently). 1493 phantom links mostly Archive/Inbox legacy (low priority; many are obvious renames). 890 orphans dominated by Readwise/Daily Notes (expected noise; actionable subset ~40). 164 under-connected Projects/Areas. No auto-queueable fixes — all require judgment (distill, rename decisions, backlink decisions).</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">3d ago</div>
+          <div class="art">(no artifact)</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">3d ago</div>
+          <div class="art">No-op beat: scanned 14 recent park docs (2026-04 window). Strongest candidate pattern (consumer-tracing &gt; producer-pattern-matching) appears in 2 docs but is already covered by CLAUDE.md call-site principle. Verifier/calibration patterns live in orchestrator skill + .hive/. No skill to promote. SIDE FINDING: earlier tick scans (23-26) truncated the head output and missed 2 pending queue items (skill-vault-lint-script-bundle-pilot, skill-weak-descriptions-audit) created at 2026-04-13T17:30:00Z. Those are real queued work, not idle-beat fodder. Next tick 28 will pick up skill-vault-lint-pilot.</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">3d ago</div>
+          <div class="art">(no artifact)</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">3d ago</div>
+          <div class="art">Finding: .hive/__pycache__/ untracked in git status (python bytecode from calibration-runner.py). Fix: added .hive/__pycache__/, **/__pycache__/, *.pyc to .gitignore and removed the stray dir. Prevents future noise in git status. Mechanical; no judgment call.</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">3d ago</div>
+          <div class="art">(no artifact)</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">3d ago</div>
+          <div class="art">Source: Projects/Freelancing-Strategy.md (modified 2026-04-13). Bridge search via hsearch --bridge &#x27;catalyst-architect exit design keeps future client relationships intact&#x27; --from &#x27;career-strategy&#x27;. Added 2 See-also backlinks: (1) Resources/LLM/Knowledge Work in the Age of AI - Distill and Share Frameworks.md (Related Models) — catalyst-architect is the career-OS expression of the distill-and-share thesis; (2) Areas/Interpersonal and Trust.md (Partnership Governance) — exit-design is upfront-governance applied to leaving rather than entering. Third bridge hit (Shape of Business) already linked.</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">3d ago</div>
+          <div class="art">(no artifact)</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+        <div class="entry">
+          <div class="when">3d ago</div>
+          <div class="art">Surfaced lesson-2026-04-02-021 (verifier honesty policy) via Discord msg 1493343295609507871. Relevance: current calibration arc&#x27;s aria-pressed pivot applied this rule. lesson-index updated: last_surfaced 2026-04-13, next 2026-04-20.</div>
+          <div class="st completed">completed</div>
+        </div>
+        
+      </div>
+      
+      
+    </section>
+
+    <footer>
+      cairn · each tick, another stone on the pile · built 2026-04-16 23:30 UTC
+    </footer>
+  </div>
+</body>
+</html>

@@ -169,30 +169,126 @@ def safe_short(s: str | None, n: int = 7) -> str:
 
 
 def load_queue_yaml(path: Path) -> dict[str, Any]:
-    """Load the work-queue, tolerating unquoted '**...**' block-scalar bullets.
+    """Load the work-queue, tolerating hand-written YAML rough edges.
 
-    PyYAML reads `- **foo**` as an alias token and raises. Pre-scrub those
-    lines by wrapping the value in single quotes. Narrow, safe transform.
+    Two specific pre-scrubs for bullets in block sequences (the `acceptance_criteria`
+    section is where this happens in practice):
+
+    1. Bullets starting with ``**`` (or ``*``) are YAML aliases — PyYAML raises.
+    2. Bullets that start with a double-quoted phrase but then have unquoted
+       trailing text on the same line (``- "Foo" bar``) parse as a scalar
+       followed by garbage.
+
+    In both cases we rewrite the line to wrap the entire value in single
+    quotes, escaping embedded single quotes by doubling them. This is a
+    narrow transform — we only touch hyphen-bulleted lines.
     """
     text = path.read_text(encoding="utf-8")
-    # Match list bullets whose first non-space char is '*' and wrap in quotes.
-    # We only touch lines under `acceptance_criteria:` / similar plain sequences.
-    def _quote_star_bullet(match: re.Match[str]) -> str:
-        indent, body = match.group(1), match.group(2)
-        # already quoted
-        if body.startswith("'") or body.startswith('"'):
-            return match.group(0)
+
+    def _wrap(indent: str, body: str) -> str:
+        # strip trailing whitespace, then single-quote-escape
+        body = body.rstrip()
         escaped = body.replace("'", "''")
         return f"{indent}- '{escaped}'"
 
-    cleaned = re.sub(r"^(\s*)-\s+(\*{1,3}[^\n]*)$", _quote_star_bullet, text,
-                     flags=re.MULTILINE)
+    # A "structured" bullet opens a mapping, e.g. `- id: foo` or `- key: value`.
+    # We leave those alone. Everything else in a block sequence is free-form
+    # and safe to wrap.
+    mapping_key_re = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*\s*:\s")
+
+    def _scrub(line: str) -> str:
+        m = re.match(r"^(\s*)-\s+(.*)$", line)
+        if not m:
+            return line
+        indent, body = m.group(1), m.group(2)
+        if not body:
+            return line
+        # already safely single-quoted?
+        if body.startswith("'") and body.endswith("'") and (body.count("'") % 2 == 0):
+            return line
+        # already safely double-quoted end-to-end?
+        if body.startswith('"') and body.endswith('"') and body.count('"') == 2:
+            return line
+        # Structured mapping-bullet → leave alone
+        if mapping_key_re.match(body):
+            return line
+        # Anything else that looks free-form — wrap it defensively. This covers
+        # `**bold**`, `"leading quote" trailing text`, backticks, etc.
+        return _wrap(indent, body)
+
+    cleaned_lines = [_scrub(ln) for ln in text.splitlines()]
+    cleaned = "\n".join(cleaned_lines)
+    # PyYAML in strict mode rejects `\'` inside double-quoted scalars; the
+    # hand-written spec strings include it. Swap for a bare apostrophe — a
+    # no-op outside a string context.
+    cleaned = cleaned.replace("\\'", "'")
     try:
         data = yaml.safe_load(cleaned)
+        if data:
+            return data
     except yaml.YAMLError as exc:
-        print(f"warn: queue YAML parse failed: {exc}", file=sys.stderr)
-        return {"items": [], "metadata": {}}
-    return data or {"items": [], "metadata": {}}
+        print(f"warn: queue YAML parse failed whole-file ({exc}); "
+              f"falling back to per-item slicing", file=sys.stderr)
+
+    # Fallback: slice items + metadata apart and parse each item block alone.
+    # This survives a single broken item without losing the rest of the queue.
+    return _load_queue_fallback(cleaned)
+
+
+def _load_queue_fallback(text: str) -> dict[str, Any]:
+    """Parse items individually; on failure, skip that item."""
+    lines = text.splitlines()
+    # find `items:` and `metadata:` boundaries (at column 0)
+    items_start = None
+    metadata_start = None
+    for idx, ln in enumerate(lines):
+        if ln.rstrip() == "items:":
+            items_start = idx + 1
+        elif ln.rstrip() == "metadata:":
+            metadata_start = idx
+            break
+
+    items_out: list[Any] = []
+    if items_start is not None:
+        end = metadata_start if metadata_start is not None else len(lines)
+        # an item block begins at a line matching `- id: ...` at 2-space indent-equivalent
+        item_starts: list[int] = []
+        for i in range(items_start, end):
+            if re.match(r"^-\s+id:\s", lines[i]):
+                item_starts.append(i)
+        item_starts.append(end)
+        for si, ei in zip(item_starts, item_starts[1:]):
+            block = "\n".join(lines[si:ei])
+            try:
+                parsed = yaml.safe_load(block)
+                if isinstance(parsed, list) and parsed:
+                    items_out.extend(parsed)
+            except yaml.YAMLError:
+                # Extract just id + status so the item is at least countable
+                m_id = re.search(r"^-\s+id:\s*(.+)$", block, re.MULTILINE)
+                m_st = re.search(r"^\s+status:\s*(.+)$", block, re.MULTILINE)
+                m_proj = re.search(r"^\s+project:\s*(.+)$", block, re.MULTILINE)
+                if m_id:
+                    items_out.append({
+                        "id": m_id.group(1).strip().strip("'\""),
+                        "status": (m_st.group(1).strip().strip("'\"") if m_st else "unknown"),
+                        "project": (m_proj.group(1).strip().strip("'\"") if m_proj else ""),
+                        "type": "",
+                        "spec": "",
+                        "_fallback": True,
+                    })
+
+    metadata_out: dict[str, Any] = {}
+    if metadata_start is not None:
+        md_block = "\n".join(lines[metadata_start:])
+        try:
+            md_parsed = yaml.safe_load(md_block)
+            if isinstance(md_parsed, dict):
+                metadata_out = md_parsed.get("metadata") or {}
+        except yaml.YAMLError as exc:
+            print(f"warn: metadata parse failed: {exc}", file=sys.stderr)
+
+    return {"items": items_out, "metadata": metadata_out}
 
 
 def parse_queue_items(raw: dict[str, Any]) -> list[QueueItem]:
