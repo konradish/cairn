@@ -1,0 +1,24 @@
+services:
+  cairn:
+    build: .
+    container_name: cairn
+    restart: unless-stopped
+    # build.py hardcodes /mnt/c/... host paths, so mirror them inside the
+    # container. Read-only — cairn never writes back to any source.
+    volumes:
+      - /mnt/c/ObsidianNotes:/mnt/c/ObsidianNotes:ro
+      - /mnt/c/projects/electric-app:/mnt/c/projects/electric-app:ro
+      - /mnt/c/projects/family-movie-queue:/mnt/c/projects/family-movie-queue:ro
+      - /mnt/c/projects/lawpass-ai:/mnt/c/projects/lawpass-ai:ro
+    networks:
+      - traefik-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-network"
+      - "traefik.http.routers.cairn.rule=Host(`cairn.localhost`)"
+      - "traefik.http.routers.cairn.entrypoints=web"
+      - "traefik.http.services.cairn.loadbalancer.server.port=8080"
+
+networks:
+  traefik-network:
+    external: true
