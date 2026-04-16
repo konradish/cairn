@@ -329,11 +329,11 @@ def summarize_calibration(buckets: dict[str, list[CalibrationResult]]) -> list[d
         dots = []
         for r in lst:
             if r.score in ("true_positive", "true_negative"):
-                dots.append(("pass", r.score))
+                dots.append({"cls": "pass", "label": r.score})
             elif r.score in ("false_positive", "false_negative"):
-                dots.append(("fail", r.score))
+                dots.append({"cls": "fail", "label": r.score})
             else:
-                dots.append(("partial", r.score or "unknown"))
+                dots.append({"cls": "partial", "label": r.score or "unknown"})
         out.append({
             "category": cat,
             "dots": dots,

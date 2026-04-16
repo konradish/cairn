@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>cairn · triage feed</title>
+  <style>
+    :root {
+      --bg: #0e1116;
+      --bg-elev: #161b22;
+      --bg-elev-2: #1f2630;
+      --ink: #e6edf3;
+      --ink-dim: #8b949e;
+      --ink-faint: #6b737d;
+      --border: #30363d;
+      --accent: #e3b341;        /* cairn stone */
+      --red: #f85149;
+      --amber: #d29922;
+      --green: #3fb950;
+      --blue: #58a6ff;
+      --partial: #bc8cff;
+      --mono: "SFMono-Regular", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace;
+      --body: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif;
+      --radius: 10px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--body);
+      font-size: 15px;
+      line-height: 1.5;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right)
+               env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, pre, .mono { font-family: var(--mono); }
+    pre {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      overflow-x: auto;
+      font-size: 12.5px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 8px 0 0 0;
+      color: var(--ink-dim);
+    }
+
+    .wrap { max-width: 920px; margin: 0 auto; padding: 16px 14px 64px; }
+
+    header.top {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+    }
+    header.top h1 {
+      font-family: var(--mono);
+      font-size: 22px; margin: 0;
+      color: var(--accent); letter-spacing: 0.5px;
+    }
+    header.top h1 .stone { margin-right: 6px; }
+    header.top .meta {
+      color: var(--ink-faint); font-family: var(--mono); font-size: 12px;
+    }
+
+    /* Health strip */
+    .health {
+      background: linear-gradient(180deg, var(--bg-elev), var(--bg-elev-2));
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      margin-bottom: 18px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px 18px;
+      font-size: 13px;
+    }
+    .health .cell .k {
+      color: var(--ink-faint); font-family: var(--mono); font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.6px; display: block;
+      margin-bottom: 2px;
+    }
+    .health .cell .v {
+      color: var(--ink); font-family: var(--mono); font-size: 14px;
+    }
+    .health .cell .v .chip { margin-right: 6px; }
+    .chip {
+      display: inline-block; padding: 1px 6px; border-radius: 999px;
+      font-size: 11.5px; font-family: var(--mono); border: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .chip.red    { color: var(--red);    border-color: #5c1a1a; background: #2a1414; }
+    .chip.amber  { color: var(--amber);  border-color: #5c4413; background: #2a220e; }
+    .chip.green  { color: var(--green);  border-color: #1a4c22; background: #112016; }
+    .chip.blue   { color: var(--blue);   border-color: #1a3a5c; background: #10192a; }
+
+    .dots { display: inline-flex; gap: 4px; margin-left: 4px; vertical-align: middle; }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      display: inline-block; background: var(--ink-faint);
+    }
+    .dot.pass    { background: var(--green); }
+    .dot.fail    { background: var(--red); }
+    .dot.partial { background: var(--partial); }
+
+    /* Section headers */
+    section.section { margin-bottom: 26px; }
+    .section > h2 {
+      font-family: var(--mono);
+      font-size: 13px;
+      margin: 0 0 10px 0;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--ink-dim);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section > h2 .count {
+      color: var(--ink-faint); font-weight: normal;
+    }
+    .section.needs-you > h2 { color: var(--red); }
+    .section.needs-you .count { color: var(--red); }
+
+    /* Cards */
+    .card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      position: relative;
+    }
+    .card.sev-red   { border-left: 3px solid var(--red); }
+    .card.sev-amber { border-left: 3px solid var(--amber); }
+    .card.sev-green { border-left: 3px solid var(--green); }
+    .card.sev-blue  { border-left: 3px solid var(--blue); }
+
+    .card .head {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 10px; flex-wrap: wrap;
+    }
+    .card .title {
+      font-family: var(--mono); font-size: 14px; color: var(--ink);
+      word-break: break-all;
+    }
+    .card .sub {
+      color: var(--ink-faint); font-family: var(--mono); font-size: 11.5px;
+    }
+    .card .age {
+      color: var(--ink-faint); font-family: var(--mono); font-size: 11.5px;
+      white-space: nowrap;
+    }
+    .card .body {
+      margin-top: 6px; font-size: 14px; color: var(--ink-dim);
+    }
+    .card .body p { margin: 0; }
+    .card .foot {
+      margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px 14px;
+      font-family: var(--mono); font-size: 12px; color: var(--ink-faint);
+    }
+    .card .foot a { font-family: var(--mono); }
+
+    .empty {
+      background: var(--bg-elev);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      color: var(--ink-dim);
+      font-family: var(--mono); font-size: 13px;
+      text-align: center;
+    }
+    .empty.positive {
+      color: var(--green); border-color: #1a4c22;
+    }
+
+    /* Watching groups */
+    .watching-group {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .watching-group .gh {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between;
+      font-family: var(--mono); font-size: 12.5px;
+      background: var(--bg-elev-2);
+    }
+    .watching-group .gh .beat { color: var(--accent); }
+    .watching-group .entry {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: 90px 1fr auto;
+      gap: 10px;
+      font-size: 13px;
+      align-items: baseline;
+    }
+    .watching-group .entry:last-child { border-bottom: none; }
+    .watching-group .entry .when { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
+    .watching-group .entry .art  { color: var(--ink-dim); word-break: break-word; }
+    .watching-group .entry .st   { font-family: var(--mono); font-size: 11px; }
+    .st.completed { color: var(--green); }
+    .st.no_op     { color: var(--ink-faint); }
+    .st.errored   { color: var(--red); }
+
+    footer {
+      color: var(--ink-faint); font-family: var(--mono); font-size: 11.5px;
+      text-align: center; margin-top: 40px;
+      border-top: 1px solid var(--border); padding-top: 14px;
+    }
+
+    /* Copy-on-click rollback command */
+    .rb {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: var(--mono); font-size: 12px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 4px; padding: 2px 6px;
+      color: var(--ink-dim);
+      cursor: pointer;
+      max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .rb:hover { background: var(--bg-elev-2); color: var(--ink); }
+    .rb::before { content: "⎌"; color: var(--accent); }
+
+    @media (max-width: 640px) {
+      .health { grid-template-columns: 1fr 1fr; }
+      .card .head { flex-direction: column; align-items: flex-start; }
+      .watching-group .entry { grid-template-columns: 70px 1fr; }
+      .watching-group .entry .st { grid-column: 1 / 3; padding-top: 2px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <header class="top">
+      <h1><span class="stone">▲</span>cairn</h1>
+      <div class="meta">{{ generated_at }} · {{ generated_age_hint }}</div>
+    </header>
+
+    <!-- HEALTH STRIP -->
+    <section class="health" aria-label="Health strip">
+      <div class="cell">
+        <span class="k">queue</span>
+        <span class="v">
+          <span class="chip blue">{{ health.counts.pending }} pending</span>
+          <span class="chip blue">{{ health.counts.in_progress }} running</span>
+          {{# health.counts.blocked }}<span class="chip red">{{ health.counts.blocked }} blocked</span>{{/ health.counts.blocked }}
+          {{# health.counts.waiting }}<span class="chip amber">{{ health.counts.waiting }} waiting</span>{{/ health.counts.waiting }}
+        </span>
+      </div>
+
+      <div class="cell">
+        <span class="k">last tick</span>
+        <span class="v">{{ health.last_tick_human }}{{# health.tick_count }} · #{{ health.tick_count }}{{/ health.tick_count }}</span>
+      </div>
+
+      {{# health.calibration_has_any }}
+      <div class="cell">
+        <span class="k">calibration</span>
+        <span class="v">
+          {{# health.calibration }}
+          <span title="{{ category }} — last: {{ last_score }}">
+            <span class="dots">{{# dots }}<span class="dot {{ cls }}" title="{{ label }}"></span>{{/ dots }}</span>
+          </span>
+          {{/ health.calibration }}
+        </span>
+      </div>
+      {{/ health.calibration_has_any }}
+
+      {{# health.deploys_has_any }}
+      <div class="cell">
+        <span class="k">deploys</span>
+        <span class="v">
+          {{# health.deploys }}
+          <span class="chip">{{ id }} <span style="color:var(--ink-faint)">·</span> {{ sha }}{{# tag }} · {{ tag }}{{/ tag }}</span>
+          {{/ health.deploys }}
+        </span>
+      </div>
+      {{/ health.deploys_has_any }}
+    </section>
+
+
+    <!-- NEEDS YOU -->
+    <section class="section needs-you" aria-label="Needs you">
+      <h2>▲ needs you <span class="count">({{ needs_you_count }})</span></h2>
+      {{# needs_you }}
+      <article class="card sev-{{ severity }}">
+        <div class="head">
+          <div>
+            <div class="title">{{ title }}</div>
+            <div class="sub">{{ kind }} · {{ subtitle }}</div>
+          </div>
+          <div class="age">{{ age }}</div>
+        </div>
+        {{# body }}<div class="body"><p>{{ body }}</p></div>{{/ body }}
+      </article>
+      {{/ needs_you }}
+      {{^ needs_you }}
+      <div class="empty positive">nothing pending — you're clear.</div>
+      {{/ needs_you }}
+    </section>
+
+
+    <!-- SHIPPED -->
+    <section class="section" aria-label="What shipped">
+      <h2>▲ what shipped <span class="count">(last {{ window_hours }}h · {{ shipped_count }})</span></h2>
+      {{# shipped }}
+      <article class="card sev-green">
+        <div class="head">
+          <div>
+            <div class="title">{{ id }}</div>
+            <div class="sub">{{ project }}{{# iterations_used }} · {{ iterations_used }} iter{{/ iterations_used }}</div>
+          </div>
+          <div class="age">{{ completed_human }}</div>
+        </div>
+        <div class="body"><p>{{ outcome }}</p></div>
+        <div class="foot">
+          {{# commit_url }}<a href="{{ commit_url }}" target="_blank" rel="noopener">{{ commit_short }}</a>{{/ commit_url }}
+          {{^ commit_url }}{{# commit_short }}<span class="mono">{{ commit_short }}</span>{{/ commit_short }}{{/ commit_url }}
+          {{# commit_subject }}<span style="color:var(--ink-faint);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ commit_subject }}</span>{{/ commit_subject }}
+          {{# rollback }}<span class="rb" onclick="navigator.clipboard && navigator.clipboard.writeText(this.dataset.cmd)" data-cmd="{{ rollback }}" title="click to copy">{{ rollback }}</span>{{/ rollback }}
+          {{# verify_link }}<span class="mono">verifier:{{ verify_link }}</span>{{/ verify_link }}
+        </div>
+      </article>
+      {{/ shipped }}
+      {{^ shipped }}
+      <div class="empty">nothing shipped in the last {{ window_hours }}h.</div>
+      {{/ shipped }}
+    </section>
+
+
+    <!-- RUNNING -->
+    <section class="section" aria-label="What's running">
+      <h2>▲ what's running <span class="count">({{ running_count }})</span></h2>
+      {{# running }}
+      <article class="card sev-blue">
+        <div class="head">
+          <div>
+            <div class="title">{{ id }}</div>
+            <div class="sub">{{ project }}{{# iterations_used }} · iter {{ iterations_used }}{{/ iterations_used }}</div>
+          </div>
+          <div class="age">started {{ started_human }}</div>
+        </div>
+        {{# spec_hook }}<div class="body"><p>{{ spec_hook }}</p></div>{{/ spec_hook }}
+      </article>
+      {{/ running }}
+      {{^ running }}
+      <div class="empty">no items in progress.</div>
+      {{/ running }}
+    </section>
+
+
+    <!-- WATCHING -->
+    <section class="section" aria-label="What I'm watching">
+      <h2>▲ what i'm watching <span class="count">(last {{ window_days }}d · {{ watching_count }})</span></h2>
+      {{# watching }}
+      <div class="watching-group">
+        <div class="gh">
+          <span class="beat">{{ beat }}</span>
+          <span style="color:var(--ink-faint)">{{ count }}</span>
+        </div>
+        {{# entries }}
+        <div class="entry">
+          <div class="when">{{ completed_human }}</div>
+          <div class="art">{{ artifact }}</div>
+          <div class="st {{ status }}">{{ status }}</div>
+        </div>
+        {{/ entries }}
+      </div>
+      {{/ watching }}
+      {{^ watching }}
+      <div class="empty">no idle-beat activity in the last {{ window_days }}d.</div>
+      {{/ watching }}
+    </section>
+
+    <footer>
+      cairn · each tick, another stone on the pile · built {{ generated_at }}
+    </footer>
+  </div>
+</body>
+</html>
