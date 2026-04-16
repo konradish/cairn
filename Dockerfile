@@ -11,6 +11,8 @@ RUN pip install --no-cache-dir PyYAML==6.0.2
 # Run as non-root. The app only reads mounts and writes index.html inside /app.
 RUN useradd --create-home --shell /bin/bash --uid 1000 cairn
 WORKDIR /app
+# /app must be writable by the cairn user — build.py writes index.html here.
+RUN chown cairn:cairn /app
 COPY --chown=cairn:cairn build.py server.py /app/
 COPY --chown=cairn:cairn templates/ /app/templates/
 
