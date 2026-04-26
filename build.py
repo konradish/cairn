@@ -32,6 +32,7 @@ except ImportError:  # pragma: no cover
 
 HIVE_DIR = Path("/mnt/c/ObsidianNotes/.hive")
 QUEUE_YAML = HIVE_DIR / "work-queue.yaml"
+METADATA_YAML = HIVE_DIR / "orchestrator-metadata.yaml"
 ITERATIONS_DIR = HIVE_DIR / "iterations"
 IDLE_BEATS_DIR = HIVE_DIR / "idle-beats"
 CALIBRATION_JSONL = HIVE_DIR / "verifier-calibration-results.jsonl"
@@ -289,6 +290,52 @@ def _load_queue_fallback(text: str) -> dict[str, Any]:
             print(f"warn: metadata parse failed: {exc}", file=sys.stderr)
 
     return {"items": items_out, "metadata": metadata_out}
+
+
+def load_all_queues(hive_dir: Path = HIVE_DIR) -> dict[str, Any]:
+    """Load all work-queue*.yaml files and concatenate their items.
+
+    Reads active items from work-queue.yaml + archived items from
+    work-queue-archive.yaml (if present). Metadata is loaded from
+    orchestrator-metadata.yaml when available, falling back to the
+    metadata block in work-queue.yaml for backward compatibility.
+
+    This is the split-aware entry point; use it instead of calling
+    load_queue_yaml(QUEUE_YAML) directly.
+    """
+    # Collect all work-queue*.yaml paths in sorted order (active first)
+    queue_files = sorted(hive_dir.glob("work-queue*.yaml"))
+    # Put work-queue.yaml first if present; skip the backup file
+    primary = hive_dir / "work-queue.yaml"
+    others = [p for p in queue_files if p != primary and ".bak" not in p.name]
+    ordered = ([primary] if primary.exists() else []) + others
+
+    all_items: list[Any] = []
+    metadata: dict[str, Any] = {}
+
+    for path in ordered:
+        try:
+            raw = load_queue_yaml(path)
+        except Exception as exc:
+            print(f"warn: could not load {path.name}: {exc}", file=sys.stderr)
+            continue
+        all_items.extend(raw.get("items") or [])
+        # Take metadata from the first file that has it (usually work-queue.yaml)
+        if not metadata and raw.get("metadata"):
+            metadata = raw.get("metadata") or {}
+
+    # Override metadata from dedicated orchestrator-metadata.yaml if it exists
+    meta_path = hive_dir / "orchestrator-metadata.yaml"
+    if meta_path.exists():
+        try:
+            meta_raw = load_queue_yaml(meta_path)
+            # orchestrator-metadata.yaml has a 'metadata:' top-level key
+            if meta_raw.get("metadata"):
+                metadata = meta_raw["metadata"]
+        except Exception as exc:
+            print(f"warn: could not load orchestrator-metadata.yaml: {exc}", file=sys.stderr)
+
+    return {"items": all_items, "metadata": metadata}
 
 
 def parse_queue_items(raw: dict[str, Any]) -> list[QueueItem]:
@@ -834,7 +881,7 @@ def render_template(template: str, context: dict[str, Any]) -> str:
 def main() -> int:
     t0 = time.perf_counter()
 
-    raw = load_queue_yaml(QUEUE_YAML)
+    raw = load_all_queues(HIVE_DIR)
     items = parse_queue_items(raw)
     gates = parse_gates(raw)
     metadata = raw.get("metadata") or {}
